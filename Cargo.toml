@@ -1,0 +1,30 @@
+[package]
+name = "wikicat"
+version = "0.1.0"
+authors = ["dastardlychimp <darien.hess@demochimp.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+http = "0.1.18"
+hyper = "0.13.0-alpha.1"
+hyper-alpn = { path = "./hyper-alpn" }
+log = "0.4.8"
+tokio = "0.2.0-alpha.4"
+serde = { version = "1.0.100", features = ["derive"] }
+serde_json = "1.0.40"
+futures-util-preview = "0.3.0-alpha.18"
+futures-core = "0.2.1"
+rand = "0.7.2"
+wikiquery = { path = "../wikiquery" }
+percent-encoding = "2.1.0"
+
+# Optional features.
+env_logger = { version = "0.6.2", optional = true }
+
+[dev-dependencies]
+env_logger = "0.6.2"
+
+[features]
+logging = ["env_logger"]
