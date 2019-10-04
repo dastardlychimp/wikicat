@@ -104,7 +104,10 @@ pub mod api
                 .info()
                 .in_prop("url")
                 .in_prop("displaytitle")
-                .description();
+                .extracts()
+                .ex_chars("1000")
+                .ex_limit("1")
+                .ex_plain_text();
 
             query
         }
@@ -424,9 +427,11 @@ mod test
 
         let page = &body.query.pages.unwrap()[0];
 
+        let extract = "Death is the permanent cessation of all biological functions that sustain a living organism. Phenomena which commonly bring about death include aging, predation, malnutrition, disease, suicide, homicide, starvation, dehydration, and accidents or major trauma resulting in terminal injury. In most cases, bodies of living organisms begin to decompose shortly after death.Death – particularly the death of humans – has commonly been considered a sad or unpleasant occasion, due to the affection for the being that has died and the termination of social and familial bonds with the deceased. Other concerns include fear of death, necrophobia, anxiety, sorrow, grief, emotional pain, depression, sympathy, compassion, solitude, or saudade. Many cultures and religions have the idea of an afterlife, and also hold the idea of reward or judgement and punishment for past sin.\n\n\n== Senescence ==\n\nSenescence refers to a scenario when a living being is able to survive all calamities, but eventually dies due to...";
+
         assert_eq!(page.title, "Death");
         assert_eq!(page.display_title, Some("Death".to_string()));
         assert_eq!(page.full_url, Some("https://en.wikipedia.org/wiki/Death".to_string()));
-        assert_eq!(page.description, Some("permanent cessation of vital functions".to_string()));
+        assert_eq!(page.extract, Some(extract.to_string()));
     }
 }
