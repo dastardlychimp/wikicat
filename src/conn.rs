@@ -40,72 +40,103 @@ pub mod api
 
     type QueryResponse = Result<Response<responses::Query>, Error>;
 
-    pub fn all_categories_query<'a>(category: String) -> requests::Query<'a>
+    pub mod helpers
     {
-        let mut query = requests::Query::new();
-        let encoded_category = encode_unsafe_url_chars(&category);
+        use super::*;
         
+        pub async fn send_query_and_deserialize<'a>(client: &AlpnClient, query: &mut requests::Query<'a>) -> QueryResponse
         {
+            let req = query.uri().unwrap();
+            debug!("Req: {:?}", req);
+            let resp = client.get(req).await?;
+            debug!("Resp: {:?}", resp);
+            deserialize_json::<responses::Query>(resp).await
+        }
+    }
+
+    pub mod queries
+    {
+        use super::*;
+        
+        pub fn all_categories_query<'a>(category: String) -> requests::Query<'a>
+        {
+            let mut query = requests::Query::new();
+            let encoded_category = encode_unsafe_url_chars(&category);
+            
+            {
+                query
+                    .all_categories()
+                    .ac_min("1")
+                    .ac_limit("20")
+                    .ac_prop("size")
+                    .ac_prefix(encoded_category);
+            }
+
             query
-                .all_categories()
-                .ac_min("1")
-                .ac_limit("20")
-                .ac_prop("size")
-                .ac_prefix(encoded_category);
         }
 
-        query
+        pub fn category_members_query<'a>(category: String) -> requests::Query<'a>
+        {
+            let mut query = requests::Query::new();
+            let encoded_category = encode_unsafe_url_chars(&category);
+
+            query
+                .category_members()
+                .cm_title(encoded_category)
+                .cm_type("page")
+                .cm_type("subcat")
+                .cm_prop("ids")
+                .cm_prop("title")
+                .cm_prop("type")
+                .cm_prop("timestamp")
+                .cm_limit("500");
+
+            query
+        }
+
+        pub fn details_query<'a>(article: String) -> requests::Query<'a>
+        {
+            let mut query = requests::Query::new();
+            let encoded_article = encode_unsafe_url_chars(&article);
+
+            query.pages()
+                .titles(encoded_article)
+                .info()
+                .in_prop("url")
+                .in_prop("displaytitle")
+                .description();
+
+            query
+        }
     }
 
     pub async fn all_categories(client: &AlpnClient, category: String) -> QueryResponse
     {
-        let mut query = all_categories_query(category);
-        send_query_and_deserialize(client, &mut query).await
+        let mut query = queries::all_categories_query(category);
+        helpers::send_query_and_deserialize(client, &mut query).await
     }
 
     pub async fn category_members(client: &AlpnClient, category: String) -> QueryResponse
     {
-        let mut query = category_members_query(category);
-        send_query_and_deserialize(client, &mut query).await
+        let mut query = queries::category_members_query(category);
+        helpers::send_query_and_deserialize(client, &mut query).await
     }
 
-    pub fn category_members_query<'a>(category: String) -> requests::Query<'a>
+    pub async fn article_details(client: &AlpnClient, article: String) -> QueryResponse
     {
-        let mut query = requests::Query::new();
-        let encoded_category = encode_unsafe_url_chars(&category);
-
-        query
-            .category_members()
-            .cm_title(encoded_category)
-            .cm_type("page")
-            .cm_type("subcat")
-            .cm_prop("ids")
-            .cm_prop("title")
-            .cm_prop("type")
-            .cm_prop("timestamp")
-            .cm_limit("500");
-
-        query
-    }
-
-    pub async fn send_query_and_deserialize<'a>(client: &AlpnClient, query: &mut requests::Query<'a>) -> QueryResponse
-    {
-        let req = query.uri().unwrap();
-        debug!("Req: {:?}", req);
-        let resp = client.get(req).await?;
-        debug!("Resp: {:?}", resp);
-        deserialize_json::<responses::Query>(resp).await
+        let mut query = queries::details_query(article);
+        helpers::send_query_and_deserialize(client, &mut query).await
     }
 
     pub async fn random_category_members(client: &AlpnClient, category: String) -> Result<Vec<responses::category_members::Data>, Error>
     {
         debug!("finding category members for: {}", &category);
-        let mut query = category_members_query(category);
+        let mut query = queries::category_members_query(category);
         let mut members = Vec::new();
 
         loop
         {
-            let resp = send_query_and_deserialize(client, &mut query).await?;
+            let resp = helpers::send_query_and_deserialize(client, &mut query).await?;
             let (_head, body) = resp.into_parts();
 
             members.append(&mut mem::replace(&mut body.query.category_members.unwrap(), Vec::new()));
@@ -137,15 +168,12 @@ pub mod api
         {
             match m.page_type.unwrap().as_ref() {
                 "subcat" => {
-                    let mut next_members = random_category_members(client, m.title).await?;
+                    let mut next_members = random_category_members(client, m.title.unwrap()).await?;
 
                     members.append(&mut next_members);
                 },
                 "page" => {
-                    debug!("Found random page: {}", m.title);
-                    let link = format!("{}{}", ADDRESS, m.title);
-                    let link = encode_unsafe_url_chars(&link);
-                    result = Ok(link);
+                    result = Ok(m.title.unwrap());
                     break;
                 }
                 unknown_page_type => {
@@ -192,13 +220,13 @@ async fn deserialize_json<D>(resp: Response<Body>) -> Result<Response<D>, Error>
 mod test
 {
     use super::*;
+    use api::helpers::send_query_and_deserialize;
     use tokio::runtime::Runtime;
     use futures_util::future;
     use hyper::Chunk;
     use serde_json::{json};
 
     use wikiquery::{requests};
-
 
     fn sample_response(body: &'static str) -> Response<Body>
     {
@@ -351,7 +379,7 @@ mod test
         }
 
 
-        let fut = api::send_query_and_deserialize(&client, &mut query);
+        let fut = send_query_and_deserialize(&client, &mut query);
         let result = rt.block_on(fut).unwrap();
         let (_head, body) = result.into_parts();
 
@@ -378,9 +406,27 @@ mod test
         }
 
 
-        let fut = api::send_query_and_deserialize(&client, &mut query);
+        let fut = send_query_and_deserialize(&client, &mut query);
         let result = rt.block_on(fut).unwrap_err();
 
         assert!(result.is_serde());
+    }
+
+    #[test]
+    fn test_article_details() {
+        let rt = Runtime::new().unwrap();
+        let client = client::new();
+
+        let fut = api::article_details(&client, "Death".to_string());
+        let result = rt.block_on(fut).unwrap();
+
+        let body = result.into_body();
+
+        let page = &body.query.pages.unwrap()[0];
+
+        assert_eq!(page.title, "Death");
+        assert_eq!(page.display_title, Some("Death".to_string()));
+        assert_eq!(page.full_url, Some("https://en.wikipedia.org/wiki/Death".to_string()));
+        assert_eq!(page.description, Some("permanent cessation of vital functions".to_string()));
     }
 }
