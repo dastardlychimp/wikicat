@@ -191,14 +191,14 @@ pub mod api
 
 async fn body_chunks_to_string(mut body: Body) -> String
 {
-    let mut data = String::new();
+    let mut data = Vec::new();
 
     while let Some(chunk) = body.next().await
     {
-        data.push_str(std::str::from_utf8(&*chunk.unwrap()).unwrap())
+        data.extend(&*chunk.unwrap());
     }
 
-    data
+    String::from_utf8(data).unwrap()
 }
 
 async fn deserialize_json<D>(resp: Response<Body>) -> Result<Response<D>, Error>
@@ -224,6 +224,7 @@ mod test
 {
     use super::*;
     use api::helpers::send_query_and_deserialize;
+    use tokio;
     use tokio::runtime::Runtime;
     use futures_util::future;
     use hyper::Chunk;
@@ -433,5 +434,33 @@ mod test
         assert_eq!(page.display_title, Some("Death".to_string()));
         assert_eq!(page.full_url, Some("https://en.wikipedia.org/wiki/Death".to_string()));
         assert_eq!(page.extract, Some(extract.to_string()));
+    }
+
+
+    #[test]
+    fn test_body_to_string_with_char_split_between_chunks() {
+        let rt = Runtime::new().unwrap();
+        
+        let (mut sender, body) = Body::channel();
+
+        let string = "this is a complex character: ൠ".to_string();
+        let mut bytes = string.clone().into_bytes();
+        let last = vec![bytes.pop().unwrap()];
+
+        let chunk1 = Chunk::from(bytes);
+        let chunk2 = Chunk::from(last);
+
+        let send_fut = async move {
+            sender.send_data(chunk1).await.unwrap();
+            sender.send_data(chunk2).await.unwrap();
+        };
+
+        rt.spawn(send_fut);
+
+        let fut = body_chunks_to_string(body);
+
+        let result = rt.block_on(fut);
+
+        assert_eq!(result, string);
     }
 }
