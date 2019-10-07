@@ -1,8 +1,6 @@
 use tokio;
 use tokio::runtime::Runtime;
 use futures_util::future;
-use hyper::Chunk;
-use serde_json::{json};
 use wikiquery::{requests};
 
 use wikicat::api;
@@ -22,6 +20,17 @@ mod test
         let fut_resp = api::all_categories(&client, String::from("Lists_of_colors"));
 
         let resp = rt.block_on(fut_resp).unwrap();
+        let body = resp.into_body();
+
+        let categories = body.query.all_categories.unwrap();
+        let first = &categories[0];
+        
+        assert_eq!(categories.len(), 1);
+        assert_eq!(first.category, "Lists of colors".to_string());
+        assert_eq!(first.size, Some(18));
+        assert!(first.pages.is_some());
+        assert!(first.files.is_some());
+        assert!(first.subcats.is_some());
     }
 
     #[test]
@@ -32,6 +41,13 @@ mod test
         let fut_resp = api::category_members(&client, String::from("Category:Lists_of_colors"));
 
         let resp = rt.block_on(fut_resp).unwrap();
+        let body = resp.into_body();
+
+        let members = body.query.category_members.unwrap();
+        let first = &members[0];
+
+        assert_eq!(members.len(), 18);
+        assert_eq!(first.title, Some("".to_string()))
     }
 
 
@@ -60,7 +76,9 @@ mod test
             .into_iter()
             .map(|_| api::random_article(&client, "People".to_string()));
 
-        let fut_resp = rt.block_on(future::join_all(fut));
+        let resp = rt.block_on(future::join_all(fut));
+
+        assert_eq!(resp.len(), 20);
     }
 
     #[test]
